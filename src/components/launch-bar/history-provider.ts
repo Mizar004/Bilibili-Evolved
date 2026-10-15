@@ -7,16 +7,27 @@ export interface HistoryItem {
 }
 const SearchHistoryKey = 'search_history:search_history'
 const SearchHistoryMaxItems = 20
-export const getHistoryItems = async (key = SearchHistoryKey) => {
-  const historyText = await crossOriginLocalStorage.getItem(key)
+const getHistoryStorage = () => {
+  // Some pages (including Bilibili's home page in Safari) do not create the COLS iframe.
+  // Keep search history usable without waiting for an unavailable storage bridge.
+  const iframe = dq(
+    'iframe[src^="https://s1.hdslb.com/bfs/seed/jinkela/short/cols/iframe.html"][data-loaded="true"]',
+  )
+  return iframe ? crossOriginLocalStorage : unsafeWindow.localStorage
+}
+const readHistoryItems = async (key: string, storage: ReturnType<typeof getHistoryStorage>) => {
+  const historyText = await storage.getItem(key)
   const historyItems: HistoryItem[] = historyText ? JSON.parse(historyText) : []
   return historyItems
 }
-export const clearHistoryItems = (key = SearchHistoryKey) =>
-  crossOriginLocalStorage.setItem(key, '[]')
+export const getHistoryItems = (key = SearchHistoryKey) =>
+  readHistoryItems(key, getHistoryStorage())
+export const clearHistoryItems = async (key = SearchHistoryKey) =>
+  getHistoryStorage().setItem(key, '[]')
 export const addHistoryItem = async (keyword: string, key = SearchHistoryKey) => {
   console.log('add', keyword)
-  await crossOriginLocalStorage.setItem(
+  const storage = getHistoryStorage()
+  await storage.setItem(
     key,
     JSON.stringify(
       lodash
@@ -27,7 +38,7 @@ export const addHistoryItem = async (keyword: string, key = SearchHistoryKey) =>
                 value: keyword,
                 timestamp: Number(new Date()),
               },
-              ...(await getHistoryItems()),
+              ...(await readHistoryItems(key, storage)),
             ],
             h => h.value,
           ),
@@ -39,12 +50,13 @@ export const addHistoryItem = async (keyword: string, key = SearchHistoryKey) =>
   )
 }
 export const deleteHistoryItem = async (keyword: string, key = SearchHistoryKey) => {
-  const items = await getHistoryItems()
+  const storage = getHistoryStorage()
+  const items = await readHistoryItems(key, storage)
   const index = items.findIndex(it => it.value === keyword)
   console.log('delete', keyword, index)
   if (index !== -1) {
     items.splice(index, 1)
-    await crossOriginLocalStorage.setItem(key, JSON.stringify(items))
+    await storage.setItem(key, JSON.stringify(items))
   }
 }
 export const historyProvider: LaunchBarActionProvider = {
